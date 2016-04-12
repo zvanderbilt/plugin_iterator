@@ -6,6 +6,7 @@ require 'find'
 require 'mysql'
 require 'wpcli'
 require 'csv'
+require 'mail'
 
 class WPParser
 
@@ -17,7 +18,8 @@ def self.parse(args)
     options = {
         name: 'wp_installs.csv',
         dest: './',
-        target: './'
+        target: './',
+	to: 'root'
         }
 
     opts = OptionParser.new do |opts|
@@ -38,6 +40,11 @@ def self.parse(args)
       # Cast 'name' argument to a  object.
         opts.on("-n", "--name [NAME]", "CSV name") do |name|
             options[:name] = name
+        end
+	
+	# Cast 'To Address' argument to a  object.
+        opts.on("-m", "--mailto [MAILTO]", "Email Recipient") do |to|
+            options[:to] = to
         end
 
         # Boolean switch.
@@ -128,6 +135,16 @@ def generate_csv()
         puts e
     end
 end
+def send_mail(options)
+@options = options
+    Mail.deliver do
+        from      "ruby_slave@kiosk.tm"
+        to        "zack@kiosk.tm"
+        subject   "Plugin Update Status"
+        body      File.read(Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)})
+        add_file  Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)}
+    end
+end
 
 begin
     options = WPParser.parse(ARGV)
@@ -139,6 +156,7 @@ begin
 # Print db connection info and site name
     generate_csv()
     puts wp_found(options)
+    send_mail(options)
 
 rescue => e
     puts e
