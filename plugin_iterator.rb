@@ -141,7 +141,7 @@ def send_mail(options)
     begin
         Mail.deliver do
             from      "ruby_slave@kiosk.tm"
-            to        @options[:to]
+            to        "#{options[:to]}"
             subject   "Plugin Update Status"
             body      File.read(Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)})
             add_file  Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)}
