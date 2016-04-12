@@ -19,7 +19,7 @@ def self.parse(args)
         name: 'wp_installs.csv',
         dest: './',
         target: './',
-	to: 'root'
+	    to: 'root'
         }
 
     opts = OptionParser.new do |opts|
@@ -77,6 +77,8 @@ def wp_found(options)
     begin
     @options = options
     
+    puts "Hello, #{@options[:target]} shall be searched to find WP installations..."
+    
     wpconfigs = Array.new()
         Find.find(@options[:target]) do |path|
         wpconfigs << path if path =~ /\/html\/wp\-config\.php$/
@@ -89,14 +91,13 @@ def wp_found(options)
         name, user, password, host = File.read(file).scan(/'DB_[NAME|USER|PASSWORD|HOST]+'\, '(.*?)'/).flatten
         puts "Getting plugins for..."
         @site_name = get_site_name(name, user, password, host)
-	puts @site_name
+	    puts @site_name
 
         target_csv = Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)}
 
         @wpcli = Wpcli::Client.new File.dirname(file)
-	#sitename = @wpcli.run "option get siteurl --allow-root"
-	puts "Site name is...#{@site_name}!"
-	CSV.open(target_csv, "a") do |csv|
+
+        CSV.open(target_csv, "a") do |csv|
             csv << [@site_name,]
         end
 
@@ -116,7 +117,7 @@ end
 def get_site_name(db_name, db_user, db_pass, db_host)
     begin
     con = Mysql.new("#{db_host}", "#{db_user}", "#{db_pass}", "#{db_name}")
-    rs = con.query('SELECT option_value FROM wp_options WHERE option_id = 3')
+    rs = con.query('SELECT option_value FROM wp_options WHERE option_id = 1')
     return rs.fetch_row[0]
 
     rescue => e
@@ -137,12 +138,16 @@ def generate_csv()
 end
 def send_mail(options)
 @options = options
-    Mail.deliver do
-        from      "ruby_slave@kiosk.tm"
-        to        "zack@kiosk.tm"
-        subject   "Plugin Update Status"
-        body      File.read(Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)})
-        add_file  Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)}
+    begin
+        Mail.deliver do
+            from      "ruby_slave@kiosk.tm"
+            to        @options[:to]
+            subject   "Plugin Update Status"
+            body      File.read(Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)})
+            add_file  Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)}
+        end
+    rescue => e
+        puts e
     end
 end
 
@@ -150,12 +155,12 @@ begin
     options = WPParser.parse(ARGV)
     options
 
-    puts "Hello, #{options[:target]} shall be searched to find WP installations..."
-    sleep 2
 
-# Print db connection info and site name
+# Generate CSV with header row
     generate_csv()
+# Print db connection info and site name
     puts wp_found(options)
+# Send notification email with csv attachment
     send_mail(options)
 
 rescue => e
