@@ -72,7 +72,7 @@ def wp_found(options)
     
     wpconfigs = Array.new()
         Find.find(@options[:target]) do |path|
-        wpconfigs << path if path =~ /wp\-config\.php$/
+        wpconfigs << path if path =~ /\/html\/wp\-config\.php$/
     end
 
     wpconfigs.each do |file|
