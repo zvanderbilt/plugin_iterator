@@ -10,7 +10,7 @@ require 'mail'
 
 class WPParser
 
-Version = 1.1
+Version = 1.2
 
 def self.parse(args)
     # The options specified on the command line will be collected in *options*.
@@ -94,7 +94,7 @@ def wp_found(options)
     end
 
     wpconfigs.each do |file|
-        if file =~ /bak/
+        if file =~ /(bak|Bak|repo|archive|Backup|html[\w|\-|\.])/
             next	
         end
         @wpcli = Wpcli::Client.new File.dirname(file)
@@ -117,7 +117,7 @@ def wp_found(options)
             end
         end
     end
-	send_mail(options)
+	send_mail(@options)
     rescue => e
         puts e
     end
@@ -148,7 +148,7 @@ end
 def send_mail(options)
     begin
         Mail.deliver do
-            from      "ruby_slave@kiosk.tm"
+            from      "ruby_slave@localhost"
             to        "#@options[:to]}"
             subject   "Plugin Update Status"
             body      "See attachment for details"
