@@ -16,8 +16,8 @@ def self.parse(args)
     # The options specified on the command line will be collected in *options*.
     # We set default values here.
     options = {
-        name: 'wp_installs.csv',
-        dest: './',
+        name: 'wp_plugins',
+        dest: '/tmp/',
         target: './',
 	    to: 'root'
         }
@@ -73,42 +73,51 @@ def self.parse(args)
 end  # parse
 end  # class OptionParser
 
+class Iterator
+
+def initialize(options)
+	@options = options 
+	@target = @options[:target]
+	generate_csv(options)
+    @target_csv = Dir.glob("#{@options[:dest]}#{@options[:name]}*\.csv").max_by {|f| File.mtime(f)}
+end
+
+
 def wp_found(options)
     begin
-    @options = options
-    
     puts "Hello, #{@options[:target]} shall be searched to find WP installations..."
+	puts @target_csv
     
     wpconfigs = Array.new()
         Find.find(@options[:target]) do |path|
-        wpconfigs << path if path =~ /\/html\/wp\-config\.php$/
+        wpconfigs << path if path =~ /(wp|local)\-config\.php$/
     end
 
     wpconfigs.each do |file|
         if file =~ /bak/
             next	
         end
-        name, user, password, host = File.read(file).scan(/'DB_[NAME|USER|PASSWORD|HOST]+'\, '(.*?)'/).flatten
+        @wpcli = Wpcli::Client.new File.dirname(file)
         puts "Getting plugins for..."
+
+		name, user, password, host = File.read(file).scan(/'DB_[NAME|USER|PASSWORD|HOST]+'\, '(.*?)'/).flatten
         @site_name = get_site_name(name, user, password, host)
 	    puts @site_name
-
-        target_csv = Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)}
-
-        @wpcli = Wpcli::Client.new File.dirname(file)
-
-        CSV.open(target_csv, "a") do |csv|
-            csv << [@site_name,]
-        end
+	    site_name = @wpcli.run "option get siteurl --allow-root"
+		puts site_name
+		CSV.open(@target_csv, "a") do |csv|
+			csv << ["#{@site_name}",] 
+		end
 
         plugins = @wpcli.run "plugin list --allow-root"
         plugins.each do |plugin|
             puts "#{plugin[:name]} is version #{plugin[:version]} and an update is #{plugin[:update]}"
-            CSV.open(target_csv, "a") do |csv|
+            CSV.open(@target_csv, "a") do |csv|
                 csv << ['', plugin[:name], plugin[:version], plugin[:update]]
             end
         end
     end
+	send_mail(options)
     rescue => e
         puts e
     end
@@ -127,42 +136,41 @@ ensure
     con.close if con
 end
 
-def generate_csv()
+def generate_csv(options)
     begin
-    CSV.open("/tmp/plugins_#{Time.now}.csv", "a+") do |csv|
+    CSV.open("#{@options[:dest]}/#{@options[:name]}-#{Time.now}.csv", "a+") do |csv|
         csv << ["Site name", "Plugin", "Version", "Upgradeable"]
     end
-    rescue => e
+	rescue => e
         puts e
     end
 end
 def send_mail(options)
-@options = options
     begin
         Mail.deliver do
             from      "ruby_slave@kiosk.tm"
-            to        "#{options[:to]}"
+            to        "#@options[:to]}"
             subject   "Plugin Update Status"
-            body      File.read(Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)})
-            add_file  Dir.glob("/tmp/plugins_*").max_by {|f| File.mtime(f)}
+            body      "See attachment for details"
+            add_file  Dir.glob(@target_csv)
         end
     rescue => e
         puts e
     end
 end
 
+end # class Iterator
+
+
+### EXECUTE ###
 begin
-    options = WPParser.parse(ARGV)
-    options
-
-
-# Generate CSV with header row
-    generate_csv()
-# Print db connection info and site name
-    puts wp_found(options)
-# Send notification email with csv attachment
-    send_mail(options)
+ 	options = WPParser.parse(ARGV)
+ 	options
+ 
+	Iterator.new(options).wp_found(options)
 
 rescue => e
-    puts e
+	puts e
 end
+
+
