@@ -3,14 +3,13 @@
 require 'optparse'
 require 'pp'
 require 'find'
-require 'mysql'
 require 'wpcli'
 require 'csv'
 require 'mail'
 
 class WPParser
 
-Version = 1.2
+Version = 0.9
 
 def self.parse(args)
     # The options specified on the command line will be collected in *options*.
@@ -79,61 +78,45 @@ def initialize(options)
 	@options = options 
 	@target = @options[:target]
 	generate_csv(options)
-    @target_csv = Dir.glob("#{@options[:dest]}#{@options[:name]}*\.csv").max_by {|f| File.mtime(f)}
+	@to = @options[:to]
+    @@target_csv = Dir.glob("#{@options[:dest]}#{@options[:name]}*\.csv").max_by {|f| File.mtime(f)}
 end
 
 
 def wp_found(options)
     begin
     puts "Hello, #{@options[:target]} shall be searched to find WP installations..."
-	puts @target_csv
-    
+	puts @@target_csv if @options[:verbose]
+    Dir.chdir(@target)
     wpconfigs = Array.new()
         Find.find(@options[:target]) do |path|
-        wpconfigs << path if path =~ /(wp|local)\-config\.php$/
-    end
+        	wpconfigs << path if path =~ /\/(wp|local)\-config\.php$/
+    	end
 
-    wpconfigs.each do |file|
-        if file =~ /(bak|Bak|repo|archive|Backup|html[\w|\-|\.])/
-            next	
-        end
+		wpconfigs.each do |file|
+			if file =~ /(bak|repo|archive|backup|safe|db|html\w|html\.)/
+				next	
+			end
         @wpcli = Wpcli::Client.new File.dirname(file)
-        puts "Getting plugins for..."
+        puts "Getting plugins for..." 
 
-		name, user, password, host = File.read(file).scan(/'DB_[NAME|USER|PASSWORD|HOST]+'\, '(.*?)'/).flatten
-        @site_name = get_site_name(name, user, password, host)
-	    puts @site_name
-	    site_name = @wpcli.run "option get siteurl --allow-root"
-		puts site_name
-		CSV.open(@target_csv, "a") do |csv|
+	    @site_name = @wpcli.run "option get siteurl --allow-root"
+		puts @site_name 
+		CSV.open(@@target_csv, "a") do |csv|
 			csv << ["#{@site_name}",] 
 		end
 
         plugins = @wpcli.run "plugin list --allow-root"
         plugins.each do |plugin|
-            puts "#{plugin[:name]} is version #{plugin[:version]} and an update is #{plugin[:update]}"
-            CSV.open(@target_csv, "a") do |csv|
+            puts "#{plugin[:name]} is version #{plugin[:version]} and an update is #{plugin[:update]}" 
+            CSV.open(@@target_csv, "a") do |csv|
                 csv << ['', plugin[:name], plugin[:version], plugin[:update]]
             end
         end
     end
-	send_mail(@options)
     rescue => e
         puts e
     end
-end
-
-def get_site_name(db_name, db_user, db_pass, db_host)
-    begin
-    con = Mysql.new("#{db_host}", "#{db_user}", "#{db_pass}", "#{db_name}")
-    rs = con.query('SELECT option_value FROM wp_options WHERE option_id = 1')
-    return rs.fetch_row[0]
-
-    rescue => e
-        puts e
-    end
-ensure
-    con.close if con
 end
 
 def generate_csv(options)
@@ -149,7 +132,7 @@ def send_mail(options)
     begin
         Mail.deliver do
             from      "ruby_slave@localhost"
-            to        "#@options[:to]}"
+            to        @to 
             subject   "Plugin Update Status"
             body      "See attachment for details"
             add_file  Dir.glob(@target_csv)
@@ -165,8 +148,12 @@ end # class Iterator
 ### EXECUTE ###
 begin
  	options = WPParser.parse(ARGV)
- 	options
- 
+
+	puts "The following options will be used:" if options[:verbose]
+ 	pp options if options[:verbose]
+ 	
+	options
+
 	Iterator.new(options).wp_found(options)
 
 rescue => e
